@@ -33,4 +33,52 @@ Node Co-occurrence即为结点与结点之间的链接关系，若在Graph Domai
 
 这里考虑图中的结点一般会扮演两种角色role: center or context nodes。按照如此定义，我们在每一个条random walk路径中定义$(v_{con},v_{cen})$ tuple，将图中的每一个结点定义为$v_{cen}$并将其余结点设为$v_{con}$，并依次将所有tuple放进从图中提取出来的信息数组中$\mathcal{I}$中。 
 
-<img src="./pics/Chapter4-pic2.png" width="450"/>
+<img src="./pics/Chapter4-pic2.png" width="600"/>
+
+**Reconstructor and Objective**：Reconstructor通过重构Mapping Function映射后的低维向量来重构结点之间的邻接关系，所以，我们通常是希望Reconstructor重构后的信息与原图中所提取出来的信息关联性越大越好。于是，这里根据一个结点可能在图中扮演的角色，center/context node，分别设置两个映射函数：$f_{cen}=u_i=e_i^TW_{cen},\quad f_{con}=v_i=e_i^TW_{con}$，所以对从原图random walk所提取出来的队列$\mathcal{I}$中的任意tuple$(v_{con},v_{cen})$，其概率$p(v_{con}|v_{cen})$应当较大，故有从序列$\mathcal{I}$中所提取出来的tuple概率乘积应当最大，这应当是最终的优化目标：
+
+<img src="./pics/Chapter4-pic3.png" width="600"/>
+<img src="./pics/Chapter4-pic4.png" width="600"/>
+<img src="./pics/Chapter4-pic5.png" width="600"/>
+
+**Hierarchial Softmax**：由于在上式4.2中，实际计算概率时直接计算该分式的分母时computational unfeasible的，于是可以采用hierarchical softmax的方法来加速计算。本质上这种softmax下的分母计算过于庞大，而hierarchical softmax可以依次计算，降低了时间复杂度。
+
+**Negative Sampling**：与推荐系统中的负采样相同，因为从原图所提取出来的信息中仅包含了正样本（即仅有两结点确有邻接关系的结点对，而没有实际上没有邻接关系的结点对），使用负采样随机的抽选没有邻接关系的结点对加入到所提取队列中，便可以提高模型的performance。
+
+**Other co-occurrence preserving methods**：
+1. node2vec：即在原来Deepwalk的基础上更改了random walk的采样逻辑，在node2vec中增加了采样路径往回采样或是停在原地的可能性。实际上就是，原random walk是深度优先搜索，而node2vec结合了广度优先搜索和深度优先搜索。
+
+<img src="./pics/Chapter4-pic6.png" width="600"/>
+
+**Matrix Factorization View**：整个Embedding Method可以从矩阵分解的角度来看待。
+
+### 4.2.2 Perserving Structural Role
+不同于Co-occurrence Features, Structural Roles of nodes in Graph也同样重要，例如如下图中，我们更希望结点$u,v$在低维空间之中的距离更近，如此一来便可以保存图中结点的结构信息。
+
+<img src="./pics/Chapter4-pic7.png" width="600"/>
+
+直觉上来说，描述两节点直接得结构信息使用结点的度degree信息，因此定义两结点在考虑离结点距离为k的邻接结点的距离为$g_k(v_1,v_2)=g_{k-1}(v_1,v_2)+dis(s(R_k(v_1))+s(R_k(v_2)))$，其中$R_k(v_1)$为距离结点$v_1$距离为k的邻接结点集合，$s(R_k(v_1))$即为该集合中的点的度按升/降序排列之后的结构。
+
+如此一来便可以构建一个k层的图，每一层图表示距离某一距离的structural information，每个层之间的相同结点相连接。点与点之间的权重$w_k(u,v)=exp(-g_k(u,v))$，如此一来，两点之间的距离越短，在图中的链接越强。接下来就可以使用random walk来提取原图中的structral information，并还是使用两个映射函数$f_{cen}=u_i=e_i^TW_{cen},\quad f_{con}=v_i=e_i^TW_{con}$，最大化概率来求解。
+
+**其实本质就是：在提取co-occurrence信息的过程中，原图就可以表示图中结点之间的链接关系，故可以之间使用random walk来从原图中提取信息。但是想要提取structural information的话，需要额外构造一张新的图，图中结点的邻接关系表示着两节点之间的结构角色是否相似，如此一来，新构造图结点之间的关系（结构关系）就和原图中结点之间的关系（邻接关系）一致，这样就可以使用和提取co-occurrence信息相同的方法来处理结构信息。**
+
+### 4.2.3 Preserving Node Status
+
+该节侧重于保护结点本身的信息，但是一般不会直接去保存结点本身的信息，而是通过保存结点特征的排名（即各结点之间特征排名来间接保存结点信息/preserving global node status ranking）
+
+**Extractor**：提取器首先提取各结点的global status score（比如centrality之类的信息），在获取过各个结点的信息后，将各结点依据提取的信息进行排序得$(v_{(1)},v_{(2)},...,v_{(N)})$。
+
+假设各结点对之间的排列顺序与序列中的其他结点对无关，则有$p_{global}=\prod_{1\leq i<j \leq N}p(v_{(i)},v_{(j)})$，其中$p(v_{(i)},v_{(j)})=\sigma(w^T(u_{(i)}-u_{(j)}))$。整个过程的objective就是使经过mapping函数映射后的低维向量之间的差值经过参数乘积以及激励函数后有最大值。
+
+### 4.2.4 Preserving Community Structure
+
+Community Structure信息包含各结点之间的连接关系，对于一个图的邻接矩阵$A$而言，两结点之间邻接关系的相似程度可以用如下表达式表示出来$s_{i,j}=\frac{A_iA_j^T}{||A_i||\cdot||A_j||}$，如此一来可以将邻接关系与两结点之间的邻接关系相似程度用$P=A+\eta\cdot S$来表示，即可以使用如下objective并使用如同deepwalk一样的方法来优化：$\mathcal{L}(W_{con},W_{cen})=||P-W_{con}W_{cen}^T||$
+
+Community Structure则是通过最大化modularity来完成的
+
+<img src="./pics/Chapter4-pic8.png" width="600"/>
+
+因此，结合以上，Preserving Community Structure的总objective为：
+
+<img src="./pics/Chapter4-pic9.png" width="600"/>
