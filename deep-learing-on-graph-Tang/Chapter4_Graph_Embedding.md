@@ -82,3 +82,74 @@ Community Structure则是通过最大化modularity来完成的
 因此，结合以上，Preserving Community Structure的总objective为：
 
 <img src="./pics/Chapter4-pic9.png" width="600"/>
+
+### 4.3 Graph Embedding on Complex Graph
+
+### 4.3.1 Heterogeneous Graph Embedding
+
+异构图为图中不同的结点/路径都赋予了不同的类型，即图中的结点/路径的类型可能是不同的，如此一来，我们便需要针对不同类型的结点/路径设计不同的映射函数（mapping function）。HNE方法即是如此，为不同的类型的结点或是路径单独分配不同的映射函数。图中最重要的信息即为各结点之间的邻接信息，即为图的邻接矩阵$A$，故**若仅想恢复/保存图中的邻接信息co-occurrence information**的话，仅需使用映射后的低维空间向量，建模当邻接矩阵中某两结点邻接情况的矩阵（即建模邻接矩阵），$p(\tilde{A}_{i,j}=1)=\sigma(u_i^Tu_j)$，使用交叉熵objective function来优化，即可以学习映射函数中的参数$-\sum_{i.j=1}^T(A_{i,j}\log p(\tilde{A}_{i,j}=1)+(1-A_{i,j})\log p(\tilde{A}_{i,j}=0))$，$\tilde{A}$为重建后的邻接矩阵。
+
+当时在异构图中有时候我们希望在保留结构信息的同时，也保留语义之间的关联(semantic correlations，即考虑到不同类型的结点和路径)。
+
+由此，定义meta-path schema为一条给定的路线模式$A_1\stackrel{R_1}{\longrightarrow}A_2\stackrel{R_2}{\longrightarrow}...\stackrel{R_l}{\longrightarrow}A_{l+1}$。对于当前的结点根据meta-path schema选择下一个类型的结点，即通过给定二第meta-path schema使用random walk生成给定的meta-path random walk路线，后续即和Deepwalk一致。
+
+### 4.3.2 Bipartite Graph Embedding
+
+在一个二分图中，一般想要提取的信息是
+
+1. 两个不相交的结点集合之间的边连接信息
+2. 在一个结点集合中的结点的邻接信息(co-occurrence information within each node set)
+
+对于第一个信息，即两个结点集之间的连接关系，一般对两结点是否连接的概率进行建模$p(u_i,u_j)=\sigma(u_i^Tv_j)$，即通过如下的优化函数优化映射函数中的参数$\mathcal{L}=-\sum_{(u_i,v_j)\in\mathcal{E}}\log p(u_i,v_j)$。
+
+对于第二个信息，则可以通过将两个独立的结点集构造成两个独立的图，在新构造的图中，某一结点集中相距2个单位的结点在新构造的图中视为邻接（相当于是在二分图中在一结点集中的两结点同时连接到另一结点集的同一结点）。于是对于两个新构造的图而言，对其分别做random walk随后使用如deep walk一样的方法来计算参数。
+
+综合上述两个信息可得总优化函数$\mathcal{L}=\mathcal{L}_\mathcal{E}+\eta_1\mathcal{L}_\mathcal{U}+\eta_2\mathcal{L}_\mathcal{V}$
+
+### 4.3.3 Multi-dimensional Graph Embedding
+
+对于多维图来说，想要提取的信息一般是：
+
+1. general node representation，即一个结点在多维图中的总的表示，一般在node classification等任务中更有用
+2. specific dimension representation for node，即一个结点在不同的维度（多维图中的维度，多维图的结点有多个维度的邻接关系，即在每个维度图的邻接矩阵不一致）中结点的特殊表示，可以用来做link prediction等任务
+
+故对于一个维度$d$的结点$i$有$u_{d,i}=u_i+r_{d,i}$，其中$r_{d,i}$是结点$i$在维度$d$上不考虑依赖关系（general node representation信息与specific dimension的信息一般是相关的）提取出来的信息。故对上式中的两项分别建模有$u_i=e^T_iW$，$r_{d,i}=e^t_iW_d$。为了提取信息有对于每一个维度采用Random Walk方法提取序列，有$\mathcal{I}=\cup_{d=1}^D\mathcal{I}^d$。故总的objective function即为考虑了每一维度的random walk序列的优化函数。
+
+<img src="./pics/Chapter4-pic10.png" width="600"/>
+
+### 4.3.4 Signed Graph Embedding
+
+对于有符号图来说，我们认为有正号之间的结点的关系要比负号之间结点的关系更加紧密。故对于一个有符号图来说，一个triplet意思是$\mathcal{I}_1=\{(v_i,v_j,v_k)|A_{i,j}=1,A_{i,k}=-1, v_i,v_j,v_k\in\mathcal{V}\}$集合中$(v_i,v_j)$之间是正符号，而$(v_j,v_k)$之间是负符号。对于triplet中同时有正边和负边的时候，就可以之间判断，但是若一个triplet中仅有正边或是负边一般就无法判断，这时可以通过多增加一个虚拟点，并与原来的点用负边相连，这是就可以强调正边的相近性。一般认为构造负符号要比构造正符号消耗(cost)大，如此一来，对于一个相同符号的triplet而言，可以增加一个虚拟点，将原triplet划分成两个单独的异符号的triplet，随后使用某些判断函数对其进行评价是正边所得score比**由负边构造的正边**所得score大，将一个triplet划分成两个的示意图如下：
+
+<img src="./pics/Chapter4-pic12.png" width="600"/>
+
+所得objective function如下：
+
+<img src="./pics/Chapter4-pic11.png" width="600"/>
+
+### 4.3.5 Hypergraph Embedding
+
+Hypergraph与一般图形式不同，其hyperedge更像是一个区域，一个区域中有多个结点，这样可以称之为该hyperedge与这些结点相连接，hypergraph示意图如下所示，图中author1/2/3相当于是不同的hyperedge：
+
+<img src="./pics/Chapter4-pic13.png" width="600"/>
+
+对于hyper graph而言一般用incidence matrix$H$来描述每个结点与各hyperedge的从属关系，故对于hypergraph的co-occurrence信息可以通过如下矩阵描述$A=HH^T-D_v$，对于$A$中的元素表示$v_i,v_j$同时出现在一个hyperedge的次数。于是想要描述Hyperedge的global o-occurrence信息就可以使用mapping function来拟合矩阵$A$，映射函数$u_i=f(A_i;\Theta)$，拟合矩阵$\tilde{A}_i=f_{re}(u_i;\Theta_{re})$。
+
+除此之外，一般还希望能够恢复hyperedge information,一个hyperedge存在于一个给定集合结点的概率定义为$p(1|\mathcal{V}^i)=\sigma(g([u^i_{(1)},...,u^i_{(k)}]))$，其中$\mathcal{V}^i=\{v^i_{(1)},v^i_{(2)},...,v^i_{(k)}\}$，其中$g$是一个前向传播网络。最终优化函数为（交叉熵）：
+
+<img src="./pics/Chapter4-pic14.png" width="600"/>
+
+结合起来为$\mathcal{L}=\mathcal{L}_1+\eta\mathcal{L}_2$
+
+### 4.3.6 Dynamic Embedding
+
+因为加入了时间戳故引入时序random walk：
+
+<img src="./pics/Chapter4-pic15.png" width="600"/>
+<img src="./pics/Chapter4-pic17.png" width="600"/>
+
+其中：
+
+<img src="./pics/Chapter4-pic16.png" width="600"/>
+
+Dynamic Embedding因为Dynamic Graph引入了时间信息，故需要修改random walk其余改动不大。
