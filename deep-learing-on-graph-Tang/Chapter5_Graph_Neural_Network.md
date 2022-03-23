@@ -43,4 +43,52 @@ GNN可以被看作是图层面的表示学习(representation learning)，对于n
 
 其中的$U\cdot \gamma(\Lambda)\cdot U^T$可以看作是graph filtering operator。
 
+若我们想要在原图中保留低频信息，则对于较大值的$\lambda_i$而言，相应的$\gamma(\lambda_i)$应该相应的为低值，例如$\gamma(\lambda_i)=\frac{1}{1+c\lambda_i}$此类的形式，通过使用这种滤波函数，原图中的平滑信息能够被保存下来，即原图中的信号会变得更加smooth。一般若是知道想要保存什么频率段的图信号就可以根据需求来设计$\gamma(\Lambda)$函数，但是一般对于GNN来说，并不知道想要保存什么频率段的信息，因此可以对$\gamma(\lambda_l)$建模，然后再通过learning的方式来学习模型的参数。例如设置$\gamma(\lambda_l)=\theta_l$。
 
+但是使用该种方法来设置频域滤波的参数也会有很多问题，其中最重要的问题就是再图傅里叶变换中$\hat{f}=U^Tf$其频率分量的数量于图结构中的结点数目一致，因此对于滤波器而言，对图结构中的每一个频率分量都需要维护一个滤波系数，总数等于图结点的数目，因此模型需要维护一个$\gamma(\Lambda)\in R^{N\times N}$的矩阵，**当图结构过大的时候/即图中结点数量过多的时候，其内存开销会变得很大**，并且也会**需要大量的数据来拟合整个滤波矩阵**，同时$U\cdot \gamma(\Lambda)\cdot U^T$会是一个紧密矩阵(dense matrix)，因此带来的问题就是，输出信号$f^{'}$会与图中的多个结点有相连关系，因此该operator就不是localized（即图中一个信号的变化通常会引起多个输出结点的变化）。
+
+总结：为每一个频率分量维护一个滤波系数，即$\gamma(\lambda_i)=\theta_i,\quad \gamma(\Lambda)=diag(\theta_1,\theta_2,...,\theta_N)$的缺点：
+1. 当需要处理的图结构过大的时候，图中结点数过多，单独为每一个频率分量维护一个滤波系数相当于维护一个$N\times N$的对角矩阵，其开销太大。需要大量数据来拟合整个矩阵。
+2. graph filtering operator $U\cdot \gamma(\Lambda)\cdot U^T$会是一个dense matrix，即输出信号中$f^{'}$可能与图中大部分结点都有关系，即图中一个信号的变化通常会引起多个输出结点的变化，该操作符并不是localized。
+
+### Polynominal Filter Operator-2016-NIPS-Defferrard
+
+Poly-Filter的提出在一定程度上缓解了解决以上的问题，在其中polynomial filter operator被建模为是一个K阶截断的多项式：$\gamma(\lambda_l)=\sum_{k=0}^K\theta_k\lambda_l^k$，该式的矩阵形式可以被写作$\gamma(\Lambda)=\sum_{k=0}^K\theta_k\Lambda^k$，其中可以看到原矩阵的参数被简化到了仅有$K+1$项。同时通过化简可以将graph filtering operator $U\cdot \gamma(\Lambda)\cdot U^T$化简到原图拉普拉斯矩阵的多项式，故优点为：
+1. 原矩阵参数仅有$K+1$项，不与原图中的结点数相关，即是scalable的方法。
+2. 原graph filtering operator $U\cdot \gamma(\Lambda)\cdot U^T$可以被原图拉普拉斯矩阵的多项式形式，故**不需要对原图的拉普拉斯矩阵做特征值分解(eigendecomposition)**。且**多项式的graph filtering operator是localized**，即输出信号的某一项仅与图中的某一些结点相关。
+
+即$U\cdot\Lambda^k\cdot U^T=L^k$，即原式有$f^{'}=\sum_{k=0}^K\theta_kU\cdot\Lambda^k\cdot U^Tf=\sum_{k=0}^K\theta_kL^kf$，且原图的拉普拉斯矩阵是稀疏的，因为经过证明可以有**矩阵$L^k$的第$(i,j)$个元素当且仅当两结点$v_i,v_j$之间的最短路径小于或等于$k$的时候不为0**。即$L^k(i,j)\neq0, iff\quad dis(v_i,v_j)\leq k$。故该方法时localized，即对于滤波后的向量的某一值来说，仅与结点周围的一定量的结点值有关，而不是与图中所有结点都相关。
+
+Poly-Filter也可以看成是一个空域滤波器(spatial filter)，因为原式可以被转换成$f^{'}[i]=b_{i,i}f[i]+\sum_{v_j\in \mathcal{N}^K(v_i)}b_{i,j}f[j],b_{i,j}=\sum^K_{k=dis(v_i,v_j)}\theta_kL^k_{i,j}$，即是在空域的角度来对原图结点的特征进行滤波。
+
+**不足**：Poly-Filter仍有不足，即他的多项式的基相互之间并不是正交的，这会导致各多项式系数之间并不是相互独立的，即多项式系数之间会相互影响，这会导致在训练的过程中这些系数不稳定。于是我们希望能够找到一种滤波器其系数彼此之间是相互独立的。
+
+### Chebyshev Polynomial and Cheby-Filter
+
+Chebyshev多项式系数可以通过递推得到$T_k(y)=2yT_{k-1}(y)-T_{k-2}(y)$，其中$T_0(y)=1,T_1(y)=y$，其中$y\in[-1,1]$。并且切比雪夫系数可以通过$T_k(y)=\cos(k\arccos(y))$得到。切比雪夫系数之间彼此在Hilbert空间正交：
+
+<img src="./pics/Chapter5-pic5.png" width="450"/>
+
+故为了满足切比雪夫多项式系数的输入值范围要求，需要对给定图拉普拉斯矩阵的特征值做缩放$\tilde{\lambda}_l=\frac{2\cdot\lambda_l}{\lambda_{max}}-1,\tilde{\Lambda}=\frac{2\cdot\Lambda}{\lambda_{max}}-I$，故Chebyshev Filter系数可以写成$\gamma(\Lambda)=\sum_{k=0}^K \theta_kT_k(\tilde{\Lambda})$，故整个滤波后的系数可以写成$f^{'}=\sum_{k=0}^K\theta_kUT_k(\tilde{\Lambda})U^Tf$，**若使用该式计算则仍需要对原拉普拉斯矩阵做eigendescomposition**，故进一步简化后可以得到$f^{'}=\sum_{k=0}^K\theta_kT_k(\tilde{L})f$。
+
+### GCN-Filter仅涉及原结点周围距离为1的结点(1-hop nodes)
+
+GCN Filter是Chebyshev Filter在K=1的特殊形式，如此一来对于滤波输出的node features，对于一个结点仅会涉及 1-hop neighbors。
+
+故有:
+
+$\gamma(\Lambda)=\theta_0T_0(\tilde{\Lambda})+\theta_1T_1(\tilde{\Lambda})\\\quad\quad=\theta_0I+\theta_1\tilde{\Lambda}\\\quad\quad=\theta_0I+\theta_1(\Lambda-I)$
+
+将GCN-Filter运用到输入结点信号中有：
+
+$f^{'}=\theta_0f-\theta_1(D^{-1/2}AD^{-1/2})f$，为了进一步简化即可以令$\theta_1=-\theta_0$，故有$f^{'}=\theta_0(I+D^{-1/2}AD^{-1/2})f$，而由于$I+D^{-1/2}AD^{-1/2}$特征值在$[0,2]$范围内，若重复将该运算符作用在learning中，可能会导致numerical instability/vanishing or exploring gradients，故为了消除影响将该运算符归一化$\tilde{A}=A+I$，$\tilde{D}_{ii}=\sum_j\tilde{A}_{i,j}$，最终归一化的运算符为$\tilde{D}^{-1/2}\tilde{A}\tilde{D}^{-1/2}$。GCN-Filter同样也可以被看作是空域滤波器，因为其仅与与目标结点有边直接相连的结点有关。
+
+### GCN Filter for multi-channel signal
+
+对于多通道的数据而言有：$F^{'}=\tilde{D}^{-1/2}\tilde{A}\tilde{D}^{-1/2}F\Theta$，其中$\Theta\in R^{d_{in}\times d_{out}}$，即$d_{out}$是总共使用的滤波器的数量，而$d_{in}$是输入通道数。
+
+若仅使用一个滤波器，其参数$\Theta\in R^{1\times d_{in}}$，即所需要学习的参数是一个向量。
+
+<img src="./pics/Chapter5-pic6.png" width="450"/>
+
+### 5.3.2 Spatial-based Graph Filters
