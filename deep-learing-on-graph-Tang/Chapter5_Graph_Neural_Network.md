@@ -83,6 +83,16 @@ $\gamma(\Lambda)=\theta_0T_0(\tilde{\Lambda})+\theta_1T_1(\tilde{\Lambda})\\\qua
 
 $f^{'}=\theta_0f-\theta_1(D^{-1/2}AD^{-1/2})f$，为了进一步简化即可以令$\theta_1=-\theta_0$，故有$f^{'}=\theta_0(I+D^{-1/2}AD^{-1/2})f$，而由于$I+D^{-1/2}AD^{-1/2}$特征值在$[0,2]$范围内，若重复将该运算符作用在learning中，可能会导致numerical instability/vanishing or exploring gradients，故为了消除影响将该运算符归一化$\tilde{A}=A+I$，$\tilde{D}_{ii}=\sum_j\tilde{A}_{i,j}$，最终归一化的运算符为$\tilde{D}^{-1/2}\tilde{A}\tilde{D}^{-1/2}$。GCN-Filter同样也可以被看作是空域滤波器，因为其仅与与目标结点有边直接相连的结点有关。
 
+**Vanishing/Exploding Gradients与Eigenvalue之间的关系**：
+
+Vanishing/Exploding Gradients是对于激活函数为Sigmoid函数$sigmoid(x)=\frac{1}{1+e^{-z}}$所提出的问题，即当对目标是用来sigmoid函数，当其值过大或是过小的时候，整个函数的导数值过小，导致其更新的速度变得非常缓慢，最终导致可能是神经网络后续层几乎不更新参数值，sigmoid函数导数函数如图所示：
+
+<img src="./pics/Chapter5-pic7.png" width="450"/>
+
+受该现象影响最显著的即是普通的RNN网络(vanilla rnn)，因为在该种网络中每个time stamp的参数在整个网络中是共同使用的，即$h^{(t)}=Wh^{(t-1)}$，对参数矩阵$W$做eigendecomposition有$h^{(t)}=Q\Lambda Q^Th^{(0)}$，从该式中可以看出，当对多个时间戳后的RNN网络状态进行求解的时候，重复将相同的参数矩阵作用在每个时间戳对应的状态向量时，相当于最终将$h^{(0)}$向着有着最大特征值的特征向量的方向上做投影，因此当$\lambda>1$时，会引起Exploding Gradients，而小于1时会导致Vanishing Gradients。
+
+解决方法即是更换激励函数，或是改变整体结构。而CNN由于每一层的参数并不是相同的，故受该种现象的影响没有Vanilla RNN大。因此，重复作用特征值范围在[0,2]的操作符在输入图信号中，便会导致该现象的发生，造成numerical instability。
+
 ### GCN Filter for multi-channel signal
 
 对于多通道的数据而言有：$F^{'}=\tilde{D}^{-1/2}\tilde{A}\tilde{D}^{-1/2}F\Theta$，其中$\Theta\in R^{d_{in}\times d_{out}}$，即$d_{out}$是总共使用的滤波器的数量，而$d_{in}$是输入通道数。
@@ -92,3 +102,44 @@ $f^{'}=\theta_0f-\theta_1(D^{-1/2}AD^{-1/2})f$，为了进一步简化即可以�
 <img src="./pics/Chapter5-pic6.png" width="450"/>
 
 ### 5.3.2 Spatial-based Graph Filters
+
+频域滤波器中的GCN其实也可以看作是空域滤波器，因为其仅仅涉及了某结点周围距离为1的结点的信息(1-hop neighbors)。最初运用在GNN中的滤波器也是空域滤波器：$F_i^{'}=\sum_{v_j\in \mathcal{N}(v_i)}g(l_i,F_j,l_j)$，即就是考虑到了与给定结点相邻接的结点的信息，其中$g(\cdot)$即为转换函数。
+
+### GraphSAGE-Filter
+
+该空域滤波器也是从与某结点邻接的结点中进行采样，得到新特征以及新节点，具体步骤包括了：
+1. 从给定结点$v_i$的邻接结点$\mathcal{N}(v_i)$中采样S个结点,$\mathcal{N}_S(v_i)=SAMPLE(\mathcal{N}(v_i),S)$。
+2. 从采样的结点中结合/聚集/提取出特定特征，$f^{'}_{\mathcal{N}_s(v_i)}=AGGREGATE({F_j,\forall v_j\in\mathcal{N}_s(v_i)})$，其中AGGREGATE函数可以选择简单提取均值，或是使用LSTM等方法处理。
+3. 合并原结点特征越提取出来的特征，$F^{'}_i=\sigma([F_i,f^{'}_{\mathcal{N}_S(v_i)}]\Theta)$
+
+### GAT-Filter
+
+即将attention机制融合进了空域滤波中，为结点周围的每个结点的特征分配一个重要系数最终建模：
+
+$e_{i,j}=a(F_i\Theta,F_j\Theta)$，随后再用softmax函数对$e_{i,j}$做归一化，最终得到$F^{'}_i=\sum_{v_j\in\mathcal{N}(v_i)\cup\{v_i\}}\alpha_{ij}F_j\Theta$
+
+
+### ECC-Filter
+
+该Filter考虑了不同的结点之间的边类型可能不同，故为不同的结点类型分配了不同的参数，即：$F^{'}_i=\frac{1}{|\mathcal{N}(v_i)|}\sum_{v_j\in \mathcal{N}(v_j)}F_j\Theta_{tp(v_i,v_j)}$，$tp(v_i,v_j)$即为结点之间的类型，不同的类型的参数不同。
+
+### GGNN-Filter
+
+将GRU融入进了更新步骤，其实也是自适应调整不同结点特征之间的重要性比例。
+
+### 5.4 Graph Pooling
+
+总体而言有两种方式：
+1. Flat Graph Pooling：即没有多层结构，整张图的结构与信息映射到一个结点，故该种pooling方法其实不涉及到图结构上的改变，而是整张图到一个结点，仅有特征上面的summary。特征summary的方法可以是最值，均值或是attention平均等。**由于flat graph pooling最终是集合到一个点，故可以在原图中加上一个fake node，用于在整个训练过程中加入，该fake node与图中所有结点相连**
+2. Hierarchical Graph Pooling：层次式pooling即分层次来降维图结构，减少图结构中的结点，不像flat形式一次性summarize到一个结点，而是每一层summarize到不同的图结构。该方法也分为两种子方法：
+   1. Downsampling-based Pooling：即通过在原图中选择最重要的N个结点来coarsen原输入图结构，可以通过计算原图中结点的importance score并将其排序，取最重要的N个结点进行来作为下一层的图结构，被选中的结点之间的相互连接关系即被保留
+   2. Supernode-based Pooling：与Downsampling方法不同超结点方法将原图中的多个节点综合成一个超结点(supernode)，supernode的特征更具选择的方法保留。
+
+
+### 5.5 Parameter Learning for GNN
+
+### Node Classification
+<img src="./pics/Chapter5-pic8.png" width="450"/>
+
+### Graph Classification
+<img src="./pics/Chapter5-pic9.png" width="450"/>
